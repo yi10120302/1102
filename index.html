@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <!-- 設定網頁編碼格式為 UTF-8 -->
+    <meta charset="UTF-8">
+    <!-- 設定響應式視窗，確保在移動設備與桌面端皆能適應螢幕寬度 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>未來港都：輕軌調度員 2088 (Cyberpunk LRT Dispatcher)</title>
+    <!-- 引入 Tailwind CSS 快速樣式庫 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Inter & Orbitron 科技感字體 -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* 設置全局字體 family */
+        body {
+            font-family: 'Orbitron', 'Noto Sans TC', sans-serif;
+            background-color: #050b14; /* 深海港灣科技墨黑 */
+            color: #00f3ff; /* 賽博霓虹青色文字 */
+            overflow: hidden; /* 防止出現滾動條 */
+        }
+        /* Canvas 畫布外框與霓虹發光效果 */
+        canvas {
+            background-color: #030710;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.2), inset 0 0 30px rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+        }
+        /* 自訂 HUD 科技感玻璃面板效果 */
+        .hud-panel {
+            background: rgba(10, 20, 38, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+        }
+        /* 按鈕發光特效 */
+        .neon-btn {
+            background: rgba(0, 243, 255, 0.1);
+            border: 1px solid #00f3ff;
+            color: #00f3ff;
+            text-shadow: 0 0 5px #00f3ff;
+            transition: all 0.2s ease-in-out;
+        }
+        .neon-btn:hover {
+            background: rgba(0, 243, 255, 0.3);
+            box-shadow: 0 0 15px #00f3ff;
+        }
+        .neon-btn:active {
+            transform: scale(0.95);
+        }
+        /* 警報霓虹紅色按鈕 */
+        .neon-btn-danger {
+            background: rgba(255, 0, 85, 0.1);
+            border: 1px solid #ff0055;
+            color: #ff0055;
+            text-shadow: 0 0 5px #ff0055;
+        }
+        .neon-btn-danger:hover {
+            background: rgba(255, 0, 85, 0.3);
+            box-shadow: 0 0 15px #ff0055;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between p-4 select-none">
+
+    <!-- 頂部 HUD 狀態資訊列 (Header Area) -->
+    <header class="hud-panel w-full p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 z-10">
+        <!-- 遊戲標題 -->
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-8 bg-cyan-400 animate-pulse rounded-sm"></div>
+            <div>
+                <h1 class="text-xl md:text-2xl font-black tracking-widest text-cyan-400">NEON HARBOR LRT 2088</h1>
+                <p class="text-xs text-cyan-600 tracking-wider">未來港都輕軌高空中央調度中心</p>
+            </div>
+        </div>
+
+        <!-- 數據儀表板 (Score, Passengers, Safety Status) -->
+        <div class="flex items-center space-x-6 text-sm md:text-base">
+            <!-- 成功送達乘客數 -->
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-gray-400">已安全送達乘客</span>
+                <span id="scoreText" class="text-xl font-bold text-cyan-300">0</span>
+            </div>
+            <!-- 警報/近距離衝突警告 -->
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-gray-400">調度安全狀態</span>
+                <span id="statusText" class="text-xs font-bold px-2 py-1 rounded bg-green-950 text-green-400 border border-green-500">NORMAL</span>
+            </div>
+            <!--剩餘防撞生命值 -->
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-gray-400">防撞韌性值 (LIVES)</span>
+                <div id="livesContainer" class="flex space-x-1 text-pink-500 font-bold">
+                    <span>◆</span><span>◆</span><span>◆</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 中間主要畫布區域 (Main Canvas Container) -->
+    <main class="flex-1 my-3 relative w-full h-full flex items-center justify-center overflow-hidden">
+        <!-- 畫布：顯示港都地圖、列車、轉轍器、車站與光軌 -->
+        <canvas id="gameCanvas" class="w-full h-full rounded-xl cursor-pointer"></canvas>
+        
+        <!-- 遊戲結束/開始 覆蓋面板 (Overlay UI) -->
+        <div id="overlayModal" class="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center rounded-xl z-20">
+            <h2 id="modalTitle" class="text-3xl md:text-5xl font-black text-cyan-400 tracking-widest mb-4">未來港都調度系統</h2>
+            <p id="modalDesc" class="text-gray-300 max-w-md text-center text-sm md:text-base mb-6 px-4">
+                歡迎進入 2088 高雄未來港都調度中心。<br>
+                點擊軌道轉轍器控制列車轉向，維持線路順暢並防止列車相撞！
+            </p>
+            <button id="startBtn" class="neon-btn px-8 py-3 rounded-lg text-lg font-bold tracking-wider">
+                啟動調度系統 (START SYSTEM)
+            </button>
+        </div>
+    </main>
+
+    <!-- 底部 HUD 控制面板 (Control Deck Area) -->
+    <footer class="hud-panel w-full p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 z-10">
+        <!-- 派車控制項 -->
+        <div class="flex items-center space-x-3">
+            <button id="dispatchBtn" class="neon-btn px-4 py-2 rounded text-sm font-bold flex items-center space-x-2">
+                <span>🚆 手動派車</span>
+            </button>
+            <button id="emergencyBrakeBtn" class="neon-btn-danger px-4 py-2 rounded text-sm font-bold">
+                ⚠️ 全線緊急煞車
+            </button>
+        </div>
+
+        <!-- 列車速度調節 slider -->
+        <div class="flex items-center space-x-3">
+            <span class="text-xs text-gray-400">模擬時間倍速:</span>
+            <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" class="accent-cyan-400 cursor-pointer">
+            <span id="speedValText" class="text-xs text-cyan-400 font-mono">1.0x</span>
+        </div>
+
+        <!-- 提示說明 -->
+        <div class="text-xs text-gray-400 hidden lg:block">
+            提示：點擊圖面上黃色閃爍節點 <span class="text-yellow-400 font-bold">◯</span> 可切換軌道方向；點擊信號燈 <span class="text-red-500 font-bold">🚦</span> 可暫停/放行。
+        </div>
+    </footer>
+
+    <!-- 遊戲主要邏輯 JavaScript -->
+    <script>
+        // ----------------------------------------------------------------
+        // 1. 全局變數與遊戲初始化設定 (Global Variables & Initial Setup)
+        // ----------------------------------------------------------------
+        
+        const canvas = document.getElementById('gameCanvas'); // 取得 Canvas 畫布 HTML 元素
+        const ctx = canvas.getContext('2d'); // 取得 2D 繪圖 context
+
+        // 遊戲狀態變數
+        let gameState = {
+            running: false, // 遊戲是否正在執行中
+            score: 0, // 送達乘客分數
+            lives: 3, // 剩餘生命值（防止相撞次數）
+            timeSpeed: 1.0, // 模擬速度
+            emergencyBrake: false, // 是否按下全線緊急煞車
+            alertStatus: 'NORMAL' // 當前警告狀態 ('NORMAL', 'WARNING', 'CRITICAL')
+        };
+
+        // 列車與地圖組件陣列
+        let trains = []; // 儲存畫面上所有運行的列車
+        let stations = []; // 儲存所有車站資料
+        let switches = []; // 儲存軌道轉轍器資料
+        let signals = []; // 儲存信號燈資料
+        let spawnTimer = 0; // 自動派車計時器
+
+        // ----------------------------------------------------------------
+        // 2. 軌道圖資數據結構 (Track Path Network Topology)
+        // 使用點 (Nodes) 與線段 (Segments) 構建未來港都軌道網
+        // ----------------------------------------------------------------
+        
+        // 基準座標網絡點（相對於 1000x600 虛擬解析度，畫布縮放時會自動適應）
+        const NODES = {
+            N1: { x: 100, y: 150 }, N2: { x: 500, y: 150 }, N3: { x: 900, y: 150 },
+            N4: { x: 100, y: 300 }, N5: { x: 500, y: 300 }, N6: { x: 900, y: 300 },
+            N7: { x: 100, y: 450 }, N8: { x: 500, y: 450 }, N9: { x: 900, y: 450 },
+            // 環狀線連接點
+            C1: { x: 300, y: 150 }, C2: { x: 700, y: 150 },
+            C3: { x: 700, y: 450 }, C4: { x: 300, y: 450 }
+        };
+
+        // 定義車站
+        stations = [
+            { id: 'ST1', name: '高科技港區站', x: 100, y: 150, color: '#00f3ff' },
+            { id: 'ST2', name: '未來展覽館站', x: 500, y: 150, color: '#00f3ff' },
+            { id: 'ST3', name: '海洋音樂廳站', x: 900, y: 150, color: '#00f3ff' },
+            { id: 'ST4', name: '愛河科幻灣站', x: 100, y: 450, color: '#ff007f' },
+            { id: 'ST5', name: '矽谷輕軌總站', x: 900, y: 450, color: '#ff007f' }
+        ];
+
+        // 定義可開關的軌道轉轍器 (Switches/Junctions)
+        switches = [
+            { id: 'SW1', x: 300, y: 150, targetNode: 'C1', activeRoute: 0, routes: ['N2', 'C4'] }, // 0: 繼續直行往 N2, 1: 切換往 C4 (向下轉彎)
+            { id: 'SW2', x: 700, y: 150, targetNode: 'C2', activeRoute: 0, routes: ['N3', 'C3'] }, // 0: 直行往 N3, 1: 轉彎往 C3
+            { id: 'SW3', x: 500, y: 300, targetNode: 'N5', activeRoute: 0, routes: ['N2', 'N8'] }  // 0: 往 N2, 1: 往 N8
+        ];
+
+        // 定義號誌燈 (Traffic Signals)
+        signals = [
+            { id: 'SIG1', x: 200, y: 150, state: 'GREEN' }, // 綠燈通行，紅燈煞車
+            { id: 'SIG2', x: 800, y: 150, state: 'GREEN' },
+            { id: 'SIG3', x: 500, y: 220, state: 'GREEN' }
+        ];
+
+        // ----------------------------------------------------------------
+        // 3. 畫面自適應調整與初始化 (Resize & Canvas Scaling)
+        // ----------------------------------------------------------------
+        function resizeCanvas() {
+            // 自動讀取父容器寬高，動態設定畫布比例
+            const parent = canvas.parentElement;
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // 轉換虛擬座標 (1000x600) 到實體視窗座標
+        function getCanvasCoords(vx, vy) {
+            const scaleX = canvas.width / 1000;
+            const scaleY = canvas.height / 600;
+            return { x: vx * scaleX, y: vy * scaleY };
+        }
+
+        // ----------------------------------------------------------------
+        // 4. 列車類別定義 (Train Class & Movement Physics)
+        // ----------------------------------------------------------------
+        class Train {
+            constructor(id, lineType, startNode, path) {
+                this.id = id; // 列車編號
+                this.lineType = lineType; // 路線類型 (Red Line, Green Line, Circular)
+                this.path = path; // 列車預計行駛節點路徑陣列 [NodeA, NodeB, NodeC...]
+                this.pathIndex = 0; // 當前路徑索引
+                
+                // 位置與運動學數據
+                const start = NODES[this.path[0]];
+                this.x = start.x;
+                this.y = start.y;
+                this.speed = 1.2; // 列車基礎運行速度
+                this.stopped = false; // 是否因信號或緊急煞車停下
+                
+                // 列車配色 (賽博風格青色/粉紅)
+                this.color = lineType === 'RED' ? '#ff0055' : (lineType === 'GREEN' ? '#00ff66' : '#00f3ff');
+                this.passengerCount = Math.floor(Math.random() * 50) + 20; // 車上員工人數
+            }
+
+            // 更新列車位置邏輯
+            update() {
+                if (gameState.emergencyBrake || this.stopped) return; // 緊急煞車時停止移動
+
+                const currentTargetNodeName = this.path[this.pathIndex + 1];
+                if (!currentTargetNodeName) return; // 無下個節點，到達終點
+
+                const targetNode = NODES[currentTargetNodeName];
+                const dx = targetNode.x - this.x;
+                const dy = targetNode.y - this.y;
+                const dist = Math.hypot(dx, dy);
+
+                // 計算移動向量並更新位置
+                const actualSpeed = this.speed * gameState.timeSpeed;
+                if (dist < actualSpeed) {
+                    // 已到達目標節點，轉向下一節點
+                    this.x = targetNode.x;
+                    this.y = targetNode.y;
+                    this.pathIndex++;
+
+                    // 檢查轉轍器路線分歧 logic
+                    const currentSwitch = switches.find(s => s.targetNode === currentTargetNodeName);
+                    if (currentSwitch) {
+                        const nextNode = currentSwitch.routes[currentSwitch.activeRoute];
+                        this.path.splice(this.pathIndex + 1, 0, nextNode);
+                    }
+
+                    // 到達終點站乘客下車邏輯
+                    if (this.pathIndex >= this.path.length - 1) {
+                        gameState.score += this.passengerCount;
+                        document.getElementById('scoreText').innerText = gameState.score;
+                        this.arrived = true; // 標記為到達並準備銷毀
+                    }
+                } else {
+                    // 朝目標節點持續移動
+                    this.x += (dx / dist) * actualSpeed;
+                    this.y += (dy / dist) * actualSpeed;
+                }
+            }
+
+            // 繪製列車主體與霓虹車尾光軌 (Trail Effect)
+            draw() {
+                const pos = getCanvasCoords(this.x, this.y);
+
+                // 畫列車光軌外芒
+                ctx.save();
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                
+                // 車體外框
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 畫列車內部核心亮白光
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // 顯示列車編號標籤
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '10px Orbitron';
+                ctx.fillText(`TR-${this.id}`, pos.x - 15, pos.y - 12);
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // 5. 自動生成列車邏輯 (Train Spawning System)
+        // ----------------------------------------------------------------
+        function spawnTrain() {
+            const lines = [
+                { type: 'CYAN', path: ['N1', 'C1', 'N2', 'C2', 'N3'] },
+                { type: 'RED', path: ['N7', 'C4', 'N8', 'C3', 'N9'] },
+                { type: 'GREEN', path: ['N2', 'N5', 'N8'] }
+            ];
+            const selectedLine = lines[Math.floor(Math.random() * lines.length)];
+            const trainId = Math.floor(Math.random() * 900 + 100);
+            trains.push(new Train(trainId, selectedLine.type, selectedLine.path[0], [...selectedLine.path]));
+        }
+
+        // ----------------------------------------------------------------
+        // 6. 碰撞檢測與安全監控系統 (Collision & Distance Check)
+        // ----------------------------------------------------------------
+        function checkCollisions() {
+            let warningFound = false;
+
+            for (let i = 0; i < trains.length; i++) {
+                for (let j = i + 1; j < trains.length; j++) {
+                    const t1 = trains[i];
+                    const t2 = trains[j];
+
+                    // 計算兩列車間距
+                    const dx = t1.x - t2.x;
+                    const dy = t1.y - t2.y;
+                    const dist = Math.hypot(dx, dy);
+
+                    // 1. 相撞 (Distance < 15px)
+                    if (dist < 15) {
+                        triggerCollision(t1, t2);
+                        return;
+                    }
+                    // 2. 近距離警報 (Distance < 60px)
+                    else if (dist < 60) {
+                        warningFound = true;
+                    }
+                }
+            }
+
+            // 更新 HUD 安全狀態
+            const statusElem = document.getElementById('statusText');
+            if (warningFound) {
+                gameState.alertStatus = 'WARNING';
+                statusElem.innerText = 'WARNING: NEAR MISS';
+                statusElem.className = 'text-xs font-bold px-2 py-1 rounded bg-yellow-950 text-yellow-400 border border-yellow-500 animate-pulse';
+            } else {
+                gameState.alertStatus = 'NORMAL';
+                statusElem.innerText = 'NORMAL';
+                statusElem.className = 'text-xs font-bold px-2 py-1 rounded bg-green-950 text-green-400 border border-green-500';
+            }
+        }
+
+        // 觸發列車相撞事故處理
+        function triggerCollision(t1, t2) {
+            // 從陣列中移除相撞列車
+            trains = trains.filter(t => t !== t1 && t !== t2);
+            gameState.lives--; // 扣減防撞韌性值
+
+            // 更新生命值 UI
+            const container = document.getElementById('livesContainer');
+            container.innerHTML = '◆'.repeat(gameState.lives) + '◇'.repeat(3 - gameState.lives);
+
+            // 檢查是否 Game Over
+            if (gameState.lives <= 0) {
+                endGame();
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // 7. 畫面繪製渲染引擎 (Render Engine & Background Grid)
+        // ----------------------------------------------------------------
+        
+        // 繪製背景未來港灣與高空網格
+        function drawBackground() {
+            // 清除畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製微弱的科技背景網格 (Cyber Grid Lines)
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.05)';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+
+            // 繪製港灣水域波紋意象
+            ctx.fillStyle = 'rgba(0, 243, 255, 0.02)';
+            ctx.fillRect(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+        }
+
+        // 繪製所有發光軌道 (Track Network)
+        function drawTracks() {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.2)';
+            ctx.lineWidth = 4;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#00f3ff';
+
+            // 定義需要連線的軌道連線 pairs
+            const trackPairs = [
+                [NODES.N1, NODES.N2], [NODES.N2, NODES.N3],
+                [NODES.N7, NODES.N8], [NODES.N8, NODES.N9],
+                [NODES.N2, NODES.N5], [NODES.N5, NODES.N8],
+                [NODES.C1, NODES.C4], [NODES.C2, NODES.C3]
+            ];
+
+            // 畫出軌道基礎線條
+            trackPairs.forEach(([start, end]) => {
+                const p1 = getCanvasCoords(start.x, start.y);
+                const p2 = getCanvasCoords(end.x, end.y);
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+            });
+            ctx.restore();
+        }
+
+        // 繪製轉轍器 (Switches) 與號誌燈 (Signals)
+        function drawInteractiveControls() {
+            // 繪製軌道轉轍器切換點
+            switches.forEach(sw => {
+                const pos = getCanvasCoords(sw.x, sw.y);
+                ctx.save();
+                ctx.fillStyle = '#ffaa00';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ffaa00';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 9, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 標示切換指示箭頭/符號
+                ctx.fillStyle = '#000000';
+                ctx.font = '10px font-bold Orbitron';
+                ctx.fillText(sw.activeRoute.toString(), pos.x - 3, pos.y + 3);
+                ctx.restore();
+            });
+
+            // 繪製信號燈 (Signals)
+            signals.forEach(sig => {
+                const pos = getCanvasCoords(sig.x, sig.y);
+                ctx.save();
+                ctx.fillStyle = sig.state === 'GREEN' ? '#00ff66' : '#ff0055';
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.fillRect(pos.x - 6, pos.y - 6, 12, 12);
+                ctx.restore();
+            });
+        }
+
+        // 繪製車站 (Stations)
+        function drawStations() {
+            stations.forEach(st => {
+                const pos = getCanvasCoords(st.x, st.y);
+                ctx.save();
+                ctx.fillStyle = st.color;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = st.color;
+                
+                // 車站圓形圖標
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 繪製車站文字標籤
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px Noto Sans TC';
+                ctx.fillText(st.name, pos.x - 30, pos.y + 25);
+                ctx.restore();
+            });
+        }
+
+        // ----------------------------------------------------------------
+        // 8. 主遊戲循環 (Main Game Loop)
+        // ----------------------------------------------------------------
+        function gameLoop() {
+            if (!gameState.running) return;
+
+            // 繪製背景與地圖
+            drawBackground();
+            drawTracks();
+            drawStations();
+            drawInteractiveControls();
+
+            // 更新並繪製列車
+            trains.forEach((train, index) => {
+                train.update();
+                train.draw();
+
+                // 清理已到達終點站的列車
+                if (train.arrived) {
+                    trains.splice(index, 1);
+                }
+            });
+
+            // 碰撞檢測
+            checkCollisions();
+
+            // 定期自動生成新列車 (每 5 秒)
+            spawnTimer++;
+            if (spawnTimer % Math.floor(300 / gameState.timeSpeed) === 0) {
+                spawnTrain();
+            }
+
+            // 請求下一幀動畫
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ----------------------------------------------------------------
+        // 9. 使用者互動點擊事件監聽 (User Interaction Handling)
+        // ----------------------------------------------------------------
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // 1. 檢測是否點擊轉轍器 (Switches)
+            switches.forEach(sw => {
+                const pos = getCanvasCoords(sw.x, sw.y);
+                const dist = Math.hypot(clickX - pos.x, clickY - pos.y);
+                if (dist < 18) {
+                    // 切換轉轍器路線 Index (0 與 1 互換)
+                    sw.activeRoute = sw.activeRoute === 0 ? 1 : 0;
+                }
+            });
+
+            // 2. 檢測是否點擊號誌燈 (Signals)
+            signals.forEach(sig => {
+                const pos = getCanvasCoords(sig.x, sig.y);
+                const dist = Math.hypot(clickX - pos.x, clickY - pos.y);
+                if (dist < 18) {
+                    // 切換信號燈狀態 GREEN <-> RED
+                    sig.state = sig.state === 'GREEN' ? 'RED' : 'GREEN';
+                }
+            });
+        });
+
+        // ----------------------------------------------------------------
+        // 10. UI 控制按鈕事件綁定 (UI Controls Event Handlers)
+        // ----------------------------------------------------------------
+        
+        // 開始遊戲按鈕
+        document.getElementById('startBtn').addEventListener('click', () => {
+            document.getElementById('overlayModal').classList.add('hidden');
+            resetGame();
+            gameState.running = true;
+            gameLoop();
+        });
+
+        // 手動派車按鈕
+        document.getElementById('dispatchBtn').addEventListener('click', () => {
+            if (gameState.running) spawnTrain();
+        });
+
+        // 全線緊急煞車按鈕
+        const emBrakeBtn = document.getElementById('emergencyBrakeBtn');
+        emBrakeBtn.addEventListener('click', () => {
+            gameState.emergencyBrake = !gameState.emergencyBrake;
+            if (gameState.emergencyBrake) {
+                emBrakeBtn.innerText = '⚡ 恢復全線通車';
+                emBrakeBtn.classList.replace('neon-btn-danger', 'neon-btn');
+            } else {
+                emBrakeBtn.innerText = '⚠️ 全線緊急煞車';
+                emBrakeBtn.classList.replace('neon-btn', 'neon-btn-danger');
+            }
+        });
+
+        // 時間倍速 Slider 控制
+        const speedSlider = document.getElementById('speedSlider');
+        speedSlider.addEventListener('input', (e) => {
+            gameState.timeSpeed = parseFloat(e.target.value);
+            document.getElementById('speedValText').innerText = `${gameState.timeSpeed.toFixed(1)}x`;
+        });
+
+        // 重新初始化遊戲數據
+        function resetGame() {
+            trains = [];
+            gameState.score = 0;
+            gameState.lives = 3;
+            gameState.emergencyBrake = false;
+            document.getElementById('scoreText').innerText = '0';
+            document.getElementById('livesContainer').innerHTML = '◆◆◆';
+            spawnTrain();
+        }
+
+        // 遊戲結束觸發 logic
+        function endGame() {
+            gameState.running = false;
+            const modal = document.getElementById('overlayModal');
+            document.getElementById('modalTitle').innerText = '系統危機！全線停駛';
+            document.getElementById('modalDesc').innerHTML = `調度系統發生重大事故。<br>最終送達乘客數：<span class="text-cyan-400 font-bold text-xl">${gameState.score}</span> 人`;
+            document.getElementById('startBtn').innerText = '重新啟動調度系統';
+            modal.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
